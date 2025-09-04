@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8">
+  <title>SmartMailbox Web Control</title>
+  <link rel="stylesheet" href="styles/styles.css">
+</head>
+<body>
+  <h1>📬 SmartMailbox1 vezérlés</h1>
+  <button onclick="sendCommand('open_lock1')">Nyisd a zár 1‑et</button>
+  <button onclick="sendCommand('open_lock2')">Nyisd a zár 2‑t</button>
+
+  <div id="log"></div>
+
+  <!-- AWS SDK-k -->
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1481.0.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
