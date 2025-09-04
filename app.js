@@ -1,4 +1,4 @@
-// 🔹 Állítsd be a saját adataidat
+// 🔹 Saját adatok
 const region = 'eu-central-1';
 const identityPoolId = 'eu-central-1:2024f636-2cea-4e5a-964a-e2ee1b2615fb';
 const iotEndpoint = 'aw0jttguq1qsu-ats.iot.eu-central-1.amazonaws.com';
@@ -18,19 +18,37 @@ function logMessage(msg) {
   logDiv.scrollTop = logDiv.scrollHeight;
 }
 
+// Hitelesítő adatok betöltése
 AWS.config.credentials.get(function(err) {
   if (err) {
-    console.error(err);
+    console.error("❌ Hiba a hitelesítésnél:", err);
     logMessage('❌ Hiba a hitelesítésnél: ' + err);
     return;
   }
 
+  // Debug infó
+  console.log("✅ IdentityId:", AWS.config.credentials.identityId);
+  console.log("✅ RoleArn:", AWS.config.credentials.params?.RoleArn);
+  console.log("✅ Token lejár:", AWS.config.credentials.expireTime);
+
+  // Aláírt URL generálása
   const requestUrl = SigV4Utils.getSignedUrl(iotEndpoint, region, AWS.config.credentials);
-  const client = mqtt.connect(requestUrl, { clientId: 'SmartMailboxWebClient-' + Math.floor(Math.random() * 100000) });
+
+  // MQTT kliens csatlakozás
+  const client = mqtt.connect(requestUrl, {
+    clientId: 'SmartMailboxWebClient-' + Math.floor(Math.random() * 100000),
+    reconnectPeriod: 5000 // újracsatlakozás 5 mp után
+  });
 
   client.on('connect', () => {
     logMessage('✅ Kapcsolódva az AWS IoT‑hoz');
-    client.subscribe(topicAck);
+    client.subscribe(topicAck, (err) => {
+      if (err) {
+        logMessage('❌ Hiba a subscribe-nál: ' + err.message);
+      } else {
+        logMessage('📡 Feliratkozva: ' + topicAck);
+      }
+    });
   });
 
   client.on('message', (topic, payload) => {
@@ -39,10 +57,19 @@ AWS.config.credentials.get(function(err) {
     }
   });
 
+  client.on('error', (error) => {
+    logMessage('❌ MQTT hiba: ' + error.message);
+  });
+
   window.sendCommand = function(cmd) {
     const message = JSON.stringify({ cmd: cmd });
-    client.publish(topicCmd, message);
-    logMessage('📤 Küldve: ' + message);
+    client.publish(topicCmd, message, (err) => {
+      if (err) {
+        logMessage('❌ Hiba a publish-nál: ' + err.message);
+      } else {
+        logMessage('📤 Küldve: ' + message);
+      }
+    });
   };
 });
 
@@ -62,7 +89,7 @@ const SigV4Utils = {
     canonicalQuerystring += '&X-Amz-Date=' + datetime;
     canonicalQuerystring += '&X-Amz-SignedHeaders=host';
 
-    const host = endpoint.replace('wss://', '');
+    const host = endpoint;
     const canonicalHeaders = 'host:' + host + '\n';
     const payloadHash = AWS.util.crypto.sha256('', 'hex');
     const canonicalRequest = method + '\n' + uri + '\n' + canonicalQuerystring + '\n' + canonicalHeaders + '\nhost\n' + payloadHash;
@@ -80,3 +107,4 @@ const SigV4Utils = {
     return AWS.util.crypto.hmac(kService, 'aws4_request');
   }
 };
+
