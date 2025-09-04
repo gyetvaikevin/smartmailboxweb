@@ -1,20 +1,65 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <title>SmartMailbox Web Control</title>
-  <link rel="stylesheet" href="styles/styles.css">
+  <meta charset="utf-8">
+  <title>Cognito IoT minimal test</title>
+  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1489.0.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
 </head>
 <body>
-  <h1>📬 SmartMailbox1 vezérlés</h1>
-  <button onclick="sendCommand('open_lock1')">Nyisd a zár 1‑et</button>
-  <button onclick="sendCommand('open_lock2')">Nyisd a zár 2‑t</button>
+<script>
+AWS.config.region = 'eu-central-1';
 
-  <div id="log"></div>
+async function runTest() {
+  // 1. Vendég hitelesítő adatok lekérése
+  AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+    IdentityPoolId: 'eu-central-1:2024f636-2cea-4e5a-964a-e2ee1b2615fb'
+  });
 
-  <!-- AWS SDK-k -->
-  <script src="https://sdk.amazonaws.com/js/aws-sdk-2.1481.0.min.js"></script>
-  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
-  <script src="app.js"></script>
+  AWS.config.credentials.clearCachedId();
+
+  await new Promise((resolve, reject) => {
+    AWS.config.credentials.get(err => {
+      if (err) return reject(err);
+      resolve();
+    });
+  });
+
+  const id = AWS.config.credentials.identityId;
+  const cred = AWS.config.credentials;
+  console.log('IdentityId:', id);
+  console.log('AccessKeyId:', cred.accessKeyId);
+  console.log('SecretAccessKey:', cred.secretAccessKey);
+  console.log('SessionToken:', cred.sessionToken);
+  console.log('ExpireTime:', cred.expireTime);
+
+  // 2. MQTT csatlakozás az IdentityId-vel mint clientId
+  const url = `wss://aw0jttguq1qsu-ats.iot.eu-central-1.amazonaws.com/mqtt`;
+
+  const client = mqtt.connect(url, {
+    clientId: id,
+    protocolVersion: 4,
+    clean: true,
+    keepalive: 30,
+    username: '?X-Amz-Algorithm=AWS4-HMAC-SHA256', // mqtt.js SigV4 plugin nélkül itt üresen hagyhatod, ha van saját URL buildered
+    // Ha van működő aláírt URL-ed, azt add meg itt a url helyett
+    transformWsUrl: (url, options, client) => {
+      // Itt használd a meglévő SigV4 URL generátorodat, ha van
+      return url;
+    }
+  });
+
+  client.on('connect', () => {
+    console.log('MQTT connected OK');
+  });
+
+  client.on('error', err => {
+    console.error('MQTT error:', err);
+  });
+}
+
+runTest().catch(console.error);
+</script>
 </body>
 </html>
+
