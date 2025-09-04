@@ -8,58 +8,73 @@
 </head>
 <body>
 <script>
-AWS.config.region = 'eu-central-1';
+const REGION = 'eu-central-1';
+const IDENTITY_POOL_ID = 'eu-central-1:2024f636-2cea-4e5a-964a-e2ee1b2615fb';
+const IOT_ENDPOINT = 'aw0jttguq1qsu-ats.iot.eu-central-1.amazonaws.com';
 
-async function runTest() {
-  // 1. Vendég hitelesítő adatok lekérése
+AWS.config.region = REGION;
+
+async function getGuestCredentials() {
   AWS.config.credentials = new AWS.CognitoIdentityCredentials({
-    IdentityPoolId: 'eu-central-1:2024f636-2cea-4e5a-964a-e2ee1b2615fb'
+    IdentityPoolId: IDENTITY_POOL_ID
   });
-
   AWS.config.credentials.clearCachedId();
-
-  await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     AWS.config.credentials.get(err => {
       if (err) return reject(err);
-      resolve();
+      resolve(AWS.config.credentials);
     });
-  });
-
-  const id = AWS.config.credentials.identityId;
-  const cred = AWS.config.credentials;
-  console.log('IdentityId:', id);
-  console.log('AccessKeyId:', cred.accessKeyId);
-  console.log('SecretAccessKey:', cred.secretAccessKey);
-  console.log('SessionToken:', cred.sessionToken);
-  console.log('ExpireTime:', cred.expireTime);
-
-  // 2. MQTT csatlakozás az IdentityId-vel mint clientId
-  const url = `wss://aw0jttguq1qsu-ats.iot.eu-central-1.amazonaws.com/mqtt`;
-
-  const client = mqtt.connect(url, {
-    clientId: id,
-    protocolVersion: 4,
-    clean: true,
-    keepalive: 30,
-    username: '?X-Amz-Algorithm=AWS4-HMAC-SHA256', // mqtt.js SigV4 plugin nélkül itt üresen hagyhatod, ha van saját URL buildered
-    // Ha van működő aláírt URL-ed, azt add meg itt a url helyett
-    transformWsUrl: (url, options, client) => {
-      // Itt használd a meglévő SigV4 URL generátorodat, ha van
-      return url;
-    }
-  });
-
-  client.on('connect', () => {
-    console.log('MQTT connected OK');
-  });
-
-  client.on('error', err => {
-    console.error('MQTT error:', err);
   });
 }
 
-runTest().catch(console.error);
+function createPresignedUrl(host, region, credentials) {
+  const url = AWS.util.urlParse(`wss://${host}/mqtt`);
+  const request = new AWS.HttpRequest(url, region);
+  request.method = 'GET';
+  request.path = '/mqtt';
+  const signer = new AWS.Signers.V4(request, 'iotdevicegateway');
+  signer.addAuthorization(credentials, AWS.util.date.getDate());
+  const query = [];
+  for (let key in request.headers) {
+    if (key.startsWith('X-Amz-')) {
+      query.push(`${encodeURIComponent(key)}=${encodeURIComponent(request.headers[key])}`);
+    }
+  }
+  return `wss://${host}/mqtt?${query.join('&')}&X-Amz-Security-Token=${encodeURIComponent(credentials.sessionToken)}`;
+}
+
+(async () => {
+  try {
+    const creds = await getGuestCredentials();
+    const identityId = creds.identityId;
+    console.log('IdentityId:', identityId);
+    console.log('AccessKeyId:', creds.accessKeyId);
+    console.log('SecretAccessKey:', creds.secretAccessKey);
+    console.log('SessionToken:', creds.sessionToken);
+    console.log('ExpireTime:', creds.expireTime);
+
+    const presignedUrl = createPresignedUrl(IOT_ENDPOINT, REGION, creds);
+
+    const client = mqtt.connect(presignedUrl, {
+      clientId: identityId, // fontos: egyezzen a policy Resource-szal
+      protocolVersion: 4,
+      clean: true,
+      reconnectPeriod: 0
+    });
+
+    client.on('connect', () => {
+      console.log('✅ MQTT connected');
+      client.end();
+    });
+
+    client.on('error', err => {
+      console.error('❌ MQTT error:', err);
+    });
+
+  } catch (e) {
+    console.error('Init error:', e);
+  }
+})();
 </script>
 </body>
 </html>
-
